@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>電影包廳活動 — 仙貝童裝</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fafaf9; }
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    
+window.storage = {
+  get: async (key) => {
+    const v = localStorage.getItem(key);
+    if (v === null) throw new Error('not found');
+    return { key, value: v };
+  },
+  set: async (key, value) => {
+    localStorage.setItem(key, value);
+    return { key, value };
+  },
+  delete: async (key) => {
+    localStorage.removeItem(key);
+    return { key, deleted: true };
+  }
+};
+
+  </script>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+// ─── Pure helper components ──────────────────────────────────
+function StatCard({ label, value, sub, accent }) {
+  return (
+    <div className="bg-white rounded-2xl p-4 border border-stone-100 shadow-sm">
+      <div className="text-xs text-stone-400 mb-1">{label}</div>
+      <div className={`text-xl font-bold ${accent || "text-stone-800"}`}>{value}</div>
+      {sub && <div className="text-xs text-stone-400 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function SettSection({ title, children }) {
+  return (
+    <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 bg-stone-50 border-b border-stone-100">
+        <div className="text-xs font-semibold text-stone-400 tracking-widest uppercase">{title}</div>
+      </div>
+      <div className="p-4 space-y-3">{children}</div>
+    </div>
+  );
+}
+
+function SettInput({ label, value, onChange, type = "text", placeholder = "" }) {
+  return (
+    <div>
+      <label className="text-xs text-stone-500 mb-1 block">{label}</label>
+      <input
+        type={type}
+        className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-stone-500 transition-colors"
+        value={value}
+        onChange={e => onChange(type === "number" ? Number(e.target.value) : e.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function Stepper({ value, onDec, onInc }) {
+  return (
+    <div className="flex items-center border border-stone-200 rounded-xl overflow-hidden">
+      <button className="w-10 h-10 flex items-center justify-center text-stone-400 text-lg hover:bg-stone-50 transition-colors active:bg-stone-100" onClick={onDec}>−</button>
+      <span className="flex-1 text-center text-sm font-semibold text-stone-800">{value}</span>
+      <button className="w-10 h-10 flex items-center justify-center text-stone-400 text-lg hover:bg-stone-50 transition-colors active:bg-stone-100" onClick={onInc}>＋</button>
+    </div>
+  );
+}
+
+function IgInput({ value, onChange }) {
+  return (
+    <div className="flex items-center border border-stone-200 rounded-xl overflow-hidden focus-within:border-stone-500 transition-colors">
+      <span className="px-3 py-2.5 bg-stone-50 text-stone-400 text-sm border-r border-stone-200 select-none">@</span>
+      <input
+        className="flex-1 px-3 py-2.5 text-sm outline-none bg-white"
+        placeholder="your_ig_account"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        autoCapitalize="none"
+        autoCorrect="off"
+      />
+    </div>
+  );
+}
+
+function PageFooter() {
+  return (
+    <div className="text-center py-6 space-y-1">
+      <a href="https://www.instagram.com/senbei.store" target="_blank" rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-stone-700">
+        <span>📞</span><span>@senbei.store</span>
+      </a>
+      <div className="text-xs text-stone-400">任何問題請私訊 IG</div>
+    </div>
+  );
+}
+
+// ─── Constants ──────────────────────────────────────────────
+const STORAGE_REGS     = "senbei_movie_regs_v1";
+const STORAGE_INTEREST = "senbei_movie_interest_v1";
+const STORAGE_SETT     = "senbei_movie_sett_v1";
+
+const DEFAULT_SETT = {
+  movieName: "電影包廳活動",
+  eventDate: "2026/08/XX",
+  eventTime: "14:00",
+  venue: "場地待定",
+  venueAddress: "",
+  totalCapacity: 30,
+  ticketPrice: 230,
+  originalPrice: 310,
+  bankName: "銀行名稱",
+  bankAccount: "帳號",
+  accountName: "戶名",
+  linePayId: "LINE Pay ID",
+  jkouId: "街口帳號",
+  adminPassword: "senbei",
+  extraNote: "",
+  interestSlots: ["場次 A — 日期待定", "場次 B — 日期待定"],
+  interestOpen: true,
+  registrationOpen: false,
+};
+
+// ─── Main App ───────────────────────────────────────────────
+function App() {
+  const [page, setPage]               = useState("interest");
+  const [regs, setRegs]               = useState([]);
+  const [interestRegs, setInterestRegs] = useState([]);
+  const [sett, setSett]               = useState(DEFAULT_SETT);
+  const [loaded, setLoaded]           = useState(false);
+
+  // Registration form
+  const [ig, setIg]                   = useState("");
+  const [name, setName]               = useState("");
+  const [seats, setSeats]             = useState(1);
+  const [babies, setBabies]           = useState(0);
+  const [transferCode, setTransferCode] = useState("");
+  const [formError, setFormError]     = useState("");
+  const [submitted, setSubmitted]     = useState(false);
+
+  // Interest form
+  const [iIg, setIIg]                 = useState("");
+  const [iSeats, setISeats]           = useState(1);
+  const [iBabies, setIBabies]         = useState(0);
+  const [iSlot, setISlot]             = useState("");
+  const [iError, setIError]           = useState("");
+  const [iSubmitted, setISubmitted]   = useState(false);
+
+  // Admin
+  const [pw, setPw]                   = useState("");
+  const [loggedIn, setLoggedIn]       = useState(false);
+  const [pwError, setPwError]         = useState("");
+  const [adminTab, setAdminTab]       = useState("list"); // list | interest | settings
+  const [editSett, setEditSett]       = useState(null);
+  const [filter, setFilter]           = useState("all");
+  const [expandedId, setExpandedId]   = useState(null);
+  const [deleteConfirmId, setDeleteConfirmId]   = useState(null);
+  const [deleteConfirmIId, setDeleteConfirmIId] = useState(null);
+  const [slotsText, setSlotsText]     = useState("");
+  const [settSaved, setSettSaved]     = useState(false);
+
+  useEffect(() => { load(); }, []);
+
+  const load = async () => {
+    try { const r = await window.storage.get(STORAGE_REGS);     if (r) setRegs(JSON.parse(r.value)); } catch {}
+    try { const i = await window.storage.get(STORAGE_INTEREST); if (i) setInterestRegs(JSON.parse(i.value)); } catch {}
+    try {
+      const s = await window.storage.get(STORAGE_SETT);
+      if (s) {
+        const p = { ...DEFAULT_SETT, ...JSON.parse(s.value) };
+        setSett(p);
+        setSlotsText((p.interestSlots || []).join("\n"));
+      } else {
+        setSlotsText(DEFAULT_SETT.interestSlots.join("\n"));
+      }
+    } catch {}
+    setLoaded(true);
+  };
+
+  const saveRegs     = async (arr) => { setRegs(arr);         try { await window.storage.set(STORAGE_REGS,     JSON.stringify(arr)); } catch {} };
+  const saveInterest = async (arr) => { setInterestRegs(arr); try { await window.storage.set(STORAGE_INTEREST, JSON.stringify(arr)); } catch {} };
+  const saveSettings = async (s)   => { setSett(s);           try { await window.storage.set(STORAGE_SETT,     JSON.stringify(s));   } catch {} };
+
+  // Derived
+  const totalSeats  = regs.reduce((a, r) => a + r.seats, 0);
+  const totalRevenue = regs.reduce((a, r) => a + r.amount, 0);
+  const paidRevenue  = regs.filter(r => r.paid).reduce((a, r) => a + r.amount, 0);
+  const remaining    = sett.totalCapacity - totalSeats;
+  const thisAmount   = seats * sett.ticketPrice;
+
+  const slotStats = (sett.interestSlots || []).map(slot => ({
+    slot,
+    count: interestRegs.filter(r => r.slot === slot).length,
+    seatCount: interestRegs.filter(r => r.slot === slot).reduce((a, r) => a + r.seats, 0),
+  }));
+
+  const submitReg = async () => {
+    if (!ig.trim())    return setFormError("請填寫 IG 帳號");
+    if (!name.trim())  return setFormError("請填寫姓名 / 暱稱");
+    const cleanIg = ig.trim().replace(/^@/, "").toLowerCase();
+    if (regs.some(r => r.ig.toLowerCase() === cleanIg)) return setFormError("此 IG 帳號已完成報名，如有疑問請私訊告知");
+    if (seats > remaining) return setFormError(`剩餘座位不足（剩 ${remaining} 位）`);
+    if (!transferCode.trim() || transferCode.trim().length < 4) return setFormError("請填寫匯款後四～五碼");
+    const reg = {
+      id: Date.now().toString(),
+      ig: ig.trim().replace(/^@/, ""),
+      name: name.trim(),
+      seats, babies,
+      amount: thisAmount,
+      transferCode: transferCode.trim(),
+      paid: false,
+      time: new Date().toLocaleString("zh-TW", { hour12: false }),
+    };
+    await saveRegs([...regs, reg]);
+    setIg(""); setName(""); setSeats(1); setBabies(0); setTransferCode(""); setFormError("");
+    setSubmitted(true);
+    setTimeout(() => setSubmitted(false), 5000);
+  };
+
+  const submitInterest = async () => {
+    if (!iIg.trim()) return setIError("請填寫 IG 帳號");
+    if (!iSlot)      return setIError("請選擇偏好場次");
+    const cleanIg = iIg.trim().replace(/^@/, "").toLowerCase();
+    if (interestRegs.some(r => r.ig.toLowerCase() === cleanIg)) return setIError("此 IG 帳號已登記過意願");
+    const entry = {
+      id: Date.now().toString(),
+      ig: iIg.trim().replace(/^@/, ""),
+      seats: iSeats,
+      babies: iBabies,
+      slot: iSlot,
+      contacted: false,
+      time: new Date().toLocaleString("zh-TW", { hour12: false }),
+    };
+    await saveInterest([...interestRegs, entry]);
+    setIIg(""); setISeats(1); setIBabies(0); setISlot(""); setIError("");
+    setISubmitted(true);
+    setTimeout(() => setISubmitted(false), 5000);
+  };
+
+  const login = () => {
+    if (pw === sett.adminPassword) {
+      setLoggedIn(true); setPwError("");
+      setEditSett({ ...sett });
+      setSlotsText((sett.interestSlots || []).join("\n"));
+    } else setPwError("密碼錯誤");
+  };
+
+  const togglePaid      = async (id) => saveRegs(regs.map(r => r.id === id ? { ...r, paid: !r.paid } : r));
+  const deleteReg       = async (id) => saveRegs(regs.filter(r => r.id !== id));
+  const toggleContacted = async (id) => saveInterest(interestRegs.map(r => r.id === id ? { ...r, contacted: !r.contacted } : r));
+  const deleteInterest  = async (id) => saveInterest(interestRegs.filter(r => r.id !== id));
+
+  const filteredRegs = [...regs]
+    .filter(r => filter === "all" ? true : filter === "paid" ? r.paid : !r.paid)
+    .reverse();
+
+  if (!loaded) return (
+    <div className="flex items-center justify-center h-screen bg-stone-50 text-stone-400 text-sm">載入中…</div>
+  );
+
+  return (
+    <div className="font-sans bg-stone-50 min-h-screen">
+      <div className="pb-16">
+
+        {/* ══════════════════════════════
+            REGISTER PAGE
+        ══════════════════════════════ */}
+        {page === "register" && (
+          <div>
+            <div className="bg-stone-900 text-white px-5 pt-12 pb-7">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">🎬</span>
+                <span className="text-xs text-stone-400 tracking-widest uppercase">活動報名</span>
+              </div>
+              <h1 className="text-2xl font-bold leading-tight">{sett.movieName}</h1>
+              <div className="mt-3 space-y-1 text-sm text-stone-300">
+                <div className="flex items-center gap-2"><span className="text-stone-500">📅</span><span>{sett.eventDate}　{sett.eventTime}</span></div>
+                <div className="flex items-center gap-2"><span className="text-stone-500">📍</span><span>{sett.venue}</span></div>
+                {sett.venueAddress && (
+                  <a href={`https://maps.google.com/?q=${encodeURIComponent(sett.venueAddress)}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs text-sky-400 underline underline-offset-2 mt-0.5">
+                    <span>🗺️</span><span>{sett.venueAddress}</span>
+                  </a>
+                )}
+              </div>
+              <div className="mt-4">
+                {remaining <= 0 ? (
+                  <span className="text-xs bg-red-500 text-white rounded-full px-3 py-1.5 font-medium">座位已額滿</span>
+                ) : remaining <= 5 ? (
+                  <span className="text-xs bg-amber-500 text-white rounded-full px-3 py-1.5 font-medium">⚡ 僅剩 {remaining} 個座位</span>
+                ) : (
+                  <span className="text-xs bg-stone-700 text-stone-300 rounded-full px-3 py-1.5">剩餘 {remaining} 個座位</span>
+                )}
+              </div>
+            </div>
+
+            {/* ── 報名表關閉 ── */}
+            {!sett.registrationOpen && (
+              <div className="px-4 py-5 max-w-md mx-auto">
+                <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-8 text-center mt-4">
+                  <div className="text-4xl mb-3">🔒</div>
+                  <div className="text-base font-semibold text-stone-700">報名尚未開放</div>
+                  <div className="text-xs text-stone-400 mt-2 leading-relaxed">目前尚未開放正式報名，<br />請先至「報名意願」頁登記意願。</div>
+                  <button className="mt-4 text-xs bg-stone-800 text-white px-4 py-2 rounded-full font-medium"
+                    onClick={() => setPage("interest")}>前往登記意願 →</button>
+                </div>
+                <PageFooter />
+              </div>
+            )}
+
+            {/* ── 報名表單 ── */}
+            {sett.registrationOpen && (
+              <div className="px-4 py-5 space-y-4 max-w-md mx-auto">
+                {/* Ticket price */}
+                <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+                  <div className="flex">
+                    <div className="flex-1 p-4 border-r border-stone-100">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="text-xs text-stone-400">2 歲以上</div>
+                        {sett.originalPrice > 0 && (
+                          <div className="text-xs text-stone-400 line-through">原價 ${sett.originalPrice}</div>
+                        )}
+                      </div>
+                      <div className="text-2xl font-bold text-stone-900">${sett.ticketPrice}</div>
+                      <div className="text-xs text-stone-400 mt-0.5">佔位 / 人</div>
+                    </div>
+                    <div className="flex-1 p-4">
+                      <div className="text-xs text-stone-400 mb-1">2 歲以下</div>
+                      <div className="text-2xl font-bold text-emerald-600">免費</div>
+                      <div className="text-xs text-stone-400 mt-0.5">抱抱不佔位</div>
+                    </div>
+                  </div>
+                  <div className="border-t border-stone-100 px-4 py-3 space-y-1.5">
+                    <div className="text-xs text-stone-500">・不佔位也無法拿取影城增高墊，需由家長抱</div>
+                    <div className="text-xs text-stone-500">・一位家長限帶一位免票兒童</div>
+                    <div className="text-xs text-stone-500">・影城增高墊數量有限，先到先拿</div>
+                    <div className="text-xs text-amber-600 font-medium">・滿 2 歲依影城規定無論是否要抱，均需購票</div>
+                  </div>
+                </div>
+
+                {/* Gift notice */}
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3.5 flex items-center gap-3">
+                  <span className="text-2xl shrink-0">🎁</span>
+                  <div>
+                    <div className="text-sm font-semibold text-emerald-800">每位購票小朋友送禮物乙份</div>
+                    <div className="text-xs text-emerald-600 mt-0.5">正式報名後由主揪於活動當天發放</div>
+                  </div>
+                </div>
+
+                {submitted && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
+                    <div className="text-3xl mb-1.5">✅</div>
+                    <div className="text-sm font-semibold text-emerald-800">報名成功！</div>
+                    <div className="text-xs text-emerald-600 mt-1">請依下方匯款資訊完成付款，並截圖傳至 IG 私訊確認。</div>
+                  </div>
+                )}
+
+                <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-4 space-y-4">
+                  <div className="text-xs font-semibold text-stone-400 tracking-widest uppercase">填寫報名資料</div>
+                  <div>
+                    <label className="text-xs text-stone-500 mb-1.5 block">IG 帳號 *</label>
+                    <IgInput value={ig} onChange={setIg} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-stone-500 mb-1.5 block">姓名 / 暱稱 *</label>
+                    <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-stone-500 transition-colors"
+                      placeholder="請填寫稱呼" value={name} onChange={e => setName(e.target.value)} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-stone-500 mb-1.5 block">佔位人數（2歲以上）</label>
+                      <Stepper value={seats} onDec={() => setSeats(Math.max(1, seats - 1))} onInc={() => { if (seats < remaining) setSeats(seats + 1); }} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-stone-500 mb-1.5 block">2歲以下（不佔位）</label>
+                      <Stepper value={babies} onDec={() => setBabies(Math.max(0, babies - 1))} onInc={() => setBabies(babies + 1)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-stone-500 mb-1.5 block">匯款後五碼 *</label>
+                    <input className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-stone-500 transition-colors font-mono tracking-widest"
+                      placeholder="例：12345" maxLength={5} inputMode="numeric"
+                      value={transferCode} onChange={e => setTransferCode(e.target.value.replace(/\D/g, "").slice(0, 5))} />
+                    <div className="text-xs text-stone-400 mt-1">匯款完成後填寫，方便賣家對帳確認</div>
+                  </div>
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3.5 py-3">
+                    <span className="text-sm mt-0.5">🪑</span>
+                    <p className="text-xs text-amber-800 leading-relaxed">座位採<strong>先來先坐</strong>，無法事先保留或指定位置，請現場自行入座。</p>
+                  </div>
+                  <div className="bg-stone-50 rounded-xl px-4 py-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-stone-500">{seats} 人 × ${sett.ticketPrice}</span>
+                      <span className="text-2xl font-bold text-stone-900">${thisAmount.toLocaleString()}</span>
+                    </div>
+                    {babies > 0 && <div className="text-xs text-emerald-600 mt-1">🍼 另 {babies} 位小寶貝抱抱免費入場</div>}
+                  </div>
+                  {/* No-refund notice */}
+                  <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3.5 space-y-1.5">
+                    <div className="text-xs font-semibold text-red-700">報名前請詳閱</div>
+                    <p className="text-xs text-red-600 font-bold">報名後不因任何個人理由退費。</p>
+                    <p className="text-xs text-red-600 leading-relaxed">費用主揪已提前一週統一繳納給影城，票價並無額外收費，恕不提供取消，敬請見諒。</p>
+                    <p className="text-xs text-red-600">如當天無法出席，請提早自行安排替補名單。</p>
+                  </div>
+
+                  {formError && <div className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{formError}</div>}
+                  <button
+                    className="w-full bg-stone-900 hover:bg-stone-700 active:bg-stone-800 text-white py-3.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-colors"
+                    onClick={submitReg} disabled={remaining <= 0}>
+                    {remaining <= 0 ? "座位已額滿" : "確認報名"}
+                  </button>
+                </div>
+
+                {/* Payment info */}
+                <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-4 space-y-4">
+                  <div className="text-xs font-semibold text-stone-400 tracking-widest uppercase">付款資訊</div>
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-stone-500 mb-2"><span>🏦</span><span>銀行轉帳</span></div>
+                    <div className="bg-stone-50 rounded-xl p-3.5 space-y-2.5">
+                      {[["銀行", sett.bankName], ["帳號", sett.bankAccount], ["戶名", sett.accountName]].map(([k, v]) => (
+                        <div key={k} className="flex justify-between items-center">
+                          <span className="text-xs text-stone-400">{k}</span>
+                          <span className="text-sm font-semibold text-stone-800 font-mono">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs text-stone-500 mb-2"><span>📱</span><span>行動支付</span></div>
+                    <div className="bg-stone-50 rounded-xl p-3.5 space-y-2.5">
+                      {[["LINE Pay", sett.linePayId], ["街口支付", sett.jkouId]].map(([k, v]) => (
+                        <div key={k} className="flex justify-between items-center">
+                          <span className="text-xs text-stone-400">{k}</span>
+                          <span className="text-sm font-semibold text-stone-800">{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="text-xs text-stone-400 leading-relaxed">⚠️ 匯款後請截圖傳至 IG 私訊確認，座位以收到款項為準。</div>
+                  {sett.extraNote && (
+                    <div className="text-xs text-stone-700 bg-amber-50 border border-amber-100 rounded-xl p-3.5 leading-relaxed">{sett.extraNote}</div>
+                  )}
+                </div>
+                <PageFooter />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════
+            INTEREST PAGE
+        ══════════════════════════════ */}
+        {page === "interest" && (
+          <div>
+            <div className="bg-stone-900 text-white px-5 pt-12 pb-7">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">📝</span>
+                <span className="text-xs text-stone-400 tracking-widest uppercase">報名意願表</span>
+              </div>
+              <h1 className="text-2xl font-bold leading-tight">{sett.movieName}</h1>
+              <p className="text-sm text-stone-400 mt-2 leading-relaxed">
+                場次尚未確定，先登記意願讓我們了解人數。<br />確認場次後會另行通知正式報名。
+              </p>
+              {interestRegs.length > 0 && (
+                <div className="mt-3 inline-flex items-center gap-1.5 bg-stone-700 rounded-full px-3 py-1.5">
+                  <span className="text-xs text-stone-300">已有</span>
+                  <span className="text-sm font-bold text-white">{interestRegs.length}</span>
+                  <span className="text-xs text-stone-300">人登記意願</span>
+                </div>
+              )}
+              {sett.venueAddress && (
+                <a href={`https://maps.google.com/?q=${encodeURIComponent(sett.venueAddress)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs text-sky-400 underline underline-offset-2 mt-3">
+                  <span>🗺️</span><span>{sett.venueAddress}</span>
+                </a>
+              )}
+            </div>
+
+            <div className="px-4 py-5 space-y-4 max-w-md mx-auto">
+              {!sett.interestOpen ? (
+                <>
+                <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-8 text-center mt-4">
+                  <div className="text-4xl mb-3">🔒</div>
+                  <div className="text-base font-semibold text-stone-700">意願登記已截止</div>
+                  <div className="text-xs text-stone-400 mt-2 leading-relaxed">目前未開放意願登記，<br />請留意後續公告。</div>
+                </div>
+                <PageFooter />
+                </>
+              ) : (
+              <>
+              {iSubmitted && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
+                  <div className="text-3xl mb-1.5">🙌</div>
+                  <div className="text-sm font-semibold text-emerald-800">已收到您的意願！</div>
+                  <div className="text-xs text-emerald-600 mt-1">場次確定後會透過 IG 私訊通知，請留意。</div>
+                </div>
+              )}
+
+              <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+                  <div className="flex">
+                    <div className="flex-1 p-4 border-r border-stone-100">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="text-xs text-stone-400">2 歲以上</div>
+                        {sett.originalPrice > 0 && (
+                          <div className="text-xs text-stone-400 line-through">原價 ${sett.originalPrice}</div>
+                        )}
+                      </div>
+                      <div className="text-2xl font-bold text-stone-900">${sett.ticketPrice}</div>
+                      <div className="text-xs text-stone-400 mt-0.5">佔位 / 人</div>
+                    </div>
+                    <div className="flex-1 p-4">
+                      <div className="text-xs text-stone-400 mb-1">2 歲以下</div>
+                      <div className="text-2xl font-bold text-emerald-600">免費</div>
+                      <div className="text-xs text-stone-400 mt-0.5">抱抱不佔位</div>
+                    </div>
+                  </div>
+                  <div className="border-t border-stone-100 px-4 py-3 space-y-1.5">
+                    <div className="text-xs text-stone-500">・不佔位也無法拿取影城增高墊，需由家長抱</div>
+                    <div className="text-xs text-stone-500">・一位家長限帶一位免票兒童</div>
+                    <div className="text-xs text-stone-500">・影城增高墊數量有限，先到先拿</div>
+                    <div className="text-xs text-amber-600 font-medium">・滿 2 歲依影城規定無論是否要抱，均需購票</div>
+                  </div>
+                </div>
+
+              <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-4 space-y-5">
+                <div className="text-xs font-semibold text-stone-400 tracking-widest uppercase">填寫意願資料</div>
+
+                <div>
+                  <label className="text-xs text-stone-500 mb-1.5 block">IG 帳號 *</label>
+                  <IgInput value={iIg} onChange={setIIg} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-stone-500 mb-1.5 block">佔位人數（2歲以上）</label>
+                    <Stepper value={iSeats} onDec={() => setISeats(Math.max(1, iSeats - 1))} onInc={() => setISeats(iSeats + 1)} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-stone-500 mb-1.5 block">2歲以下（不佔位）</label>
+                    <Stepper value={iBabies} onDec={() => setIBabies(Math.max(0, iBabies - 1))} onInc={() => setIBabies(iBabies + 1)} />
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-xl px-3.5 py-3">
+                  <span className="text-sm mt-0.5">🪑</span>
+                  <p className="text-xs text-amber-800 leading-relaxed">座位採<strong>先來先坐</strong>，無法事先保留或指定位置，請現場自行入座。</p>
+                </div>
+
+                <div>
+                  <label className="text-xs text-stone-500 mb-2 block">偏好場次 *</label>
+                  <div className="space-y-2">
+                    {(sett.interestSlots || []).map(slot => (
+                      <label key={slot}
+                        className={`flex items-center gap-3 rounded-xl border px-4 py-3.5 cursor-pointer transition-all ${iSlot === slot ? "border-stone-800 bg-stone-50" : "border-stone-200 bg-white"}`}>
+                        <input type="radio" name="slot" value={slot} checked={iSlot === slot} onChange={() => setISlot(slot)} className="accent-stone-800" />
+                        <span className="text-sm text-stone-700">{slot}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {iError && <div className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2">{iError}</div>}
+
+                <button
+                  className="w-full bg-stone-900 hover:bg-stone-700 active:bg-stone-800 text-white py-3.5 rounded-xl text-sm font-semibold transition-colors"
+                  onClick={submitInterest}>
+                  提交意願
+                </button>
+              </div>
+
+              <div className="text-xs text-stone-400 text-center leading-relaxed pb-2">
+                此為意願登記，尚未正式報名。<br />確定參加需另行完成報名及付款。
+              </div>
+              <PageFooter />
+              </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════
+            ADMIN LOGIN
+        ══════════════════════════════ */}
+        {page === "admin" && !loggedIn && (
+          <div className="min-h-screen flex items-center justify-center px-4">
+            <div className="bg-white rounded-2xl p-6 border border-stone-100 shadow-sm w-full max-w-xs">
+              <div className="text-center mb-6">
+                <div className="text-4xl mb-3">🔐</div>
+                <div className="font-semibold text-stone-800">管理員登入</div>
+                <div className="text-xs text-stone-400 mt-1">{sett.movieName}</div>
+              </div>
+              <input type="password"
+                className="w-full border border-stone-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-stone-500 mb-3 transition-colors"
+                placeholder="輸入密碼" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === "Enter" && login()} />
+              {pwError && <div className="text-xs text-red-500 mb-3 text-center">{pwError}</div>}
+              <button className="w-full bg-stone-900 text-white py-3 rounded-xl text-sm font-semibold hover:bg-stone-700 transition-colors" onClick={login}>登入</button>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════
+            ADMIN PANEL
+        ══════════════════════════════ */}
+        {page === "admin" && loggedIn && (
+          <div>
+            <div className="bg-stone-900 text-white px-5 pt-12 pb-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-xs text-stone-400 tracking-widest uppercase mb-1">後台管理</div>
+                  <h1 className="text-lg font-bold">{sett.movieName}</h1>
+                  <div className="text-xs text-stone-400 mt-1">{sett.eventDate}　{sett.eventTime}　{sett.venue}</div>
+                  <div className="flex gap-2 mt-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sett.interestOpen ? "bg-emerald-500 text-white" : "bg-stone-600 text-stone-300"}`}>
+                      意願 {sett.interestOpen ? "開放中" : "已關閉"}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${sett.registrationOpen ? "bg-emerald-500 text-white" : "bg-stone-600 text-stone-300"}`}>
+                      報名 {sett.registrationOpen ? "開放中" : "已關閉"}
+                    </span>
+                  </div>
+                </div>
+                <button className="text-xs text-stone-400 underline mt-1"
+                  onClick={() => { setLoggedIn(false); setPw(""); setAdminTab("list"); }}>登出</button>
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className="px-4 py-4 grid grid-cols-2 gap-3">
+              <StatCard label="報名筆數" value={`${regs.length} 筆`} sub={`共 ${totalSeats} 人佔位`} />
+              <StatCard label="剩餘座位" value={`${Math.max(0, remaining)} 位`} sub={`上限 ${sett.totalCapacity} 位`}
+                accent={remaining <= 0 ? "text-red-500" : remaining <= 5 ? "text-amber-500" : "text-emerald-600"} />
+              <StatCard label="應收金額" value={`$${totalRevenue.toLocaleString()}`} sub={`已確認 $${paidRevenue.toLocaleString()}`} />
+              <StatCard label="意願登記" value={`${interestRegs.length} 人`}
+                sub={`共 ${interestRegs.reduce((a, r) => a + r.seats, 0)} 個座位`} />
+            </div>
+
+            {/* Admin tabs */}
+            <div className="px-4">
+              <div className="flex bg-stone-100 rounded-xl p-1 mb-4">
+                {[["list", "報名名單"], ["interest", "意願統計"], ["settings", "活動設定"]].map(([t, l]) => (
+                  <button key={t}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${adminTab === t ? "bg-white text-stone-900 shadow-sm" : "text-stone-500"}`}
+                    onClick={() => setAdminTab(t)}>{l}</button>
+                ))}
+              </div>
+
+              {/* ── 報名名單 ── */}
+              {adminTab === "list" && (
+                <div>
+                  <div className="flex gap-2 mb-4">
+                    {[["all", "全部", regs.length], ["unpaid", "待付款", regs.filter(r => !r.paid).length], ["paid", "已付款", regs.filter(r => r.paid).length]].map(([v, l, count]) => (
+                      <button key={v}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${filter === v ? "bg-stone-900 text-white" : "bg-white text-stone-600 border border-stone-200"}`}
+                        onClick={() => setFilter(v)}>{l} <span className="opacity-70">{count}</span></button>
+                    ))}
+                  </div>
+                  {filteredRegs.length === 0 && (
+                    <div className="text-center text-sm text-stone-400 py-14">
+                      {regs.length === 0 ? "尚無報名紀錄" : "此分類無資料"}
+                    </div>
+                  )}
+                  <div className="space-y-3 pb-8">
+                    {filteredRegs.map(r => (
+                      <div key={r.id} className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+                        <div className="flex items-start p-4 cursor-pointer active:bg-stone-50"
+                          onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-stone-800 text-sm">{r.name}</span>
+                              <span className="text-xs text-stone-400 truncate">@{r.ig}</span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-3">
+                              <span className="text-xs text-stone-500">
+                                佔位 <strong className="text-stone-700">{r.seats}</strong> 人
+                                {r.babies > 0 && <> ＋ 抱抱 <strong className="text-stone-700">{r.babies}</strong> 人</>}
+                              </span>
+                              <span className="text-sm font-bold text-stone-800">${r.amount.toLocaleString()}</span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 ml-2">
+                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${r.paid ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                              {r.paid ? "已付款" : "待付款"}
+                            </span>
+                            <span className={`text-stone-300 text-xs ${expandedId === r.id ? "rotate-180" : ""} transition-transform`}>▼</span>
+                          </div>
+                        </div>
+                        {expandedId === r.id && (
+                          <div className="border-t border-stone-100 px-4 py-3 space-y-3">
+                            {r.transferCode && (
+                              <div className="flex items-center justify-between bg-stone-50 rounded-xl px-3.5 py-2.5">
+                                <span className="text-xs text-stone-400">匯款後五碼</span>
+                                <span className="text-base font-bold font-mono tracking-widest text-stone-800">{r.transferCode}</span>
+                              </div>
+                            )}
+                            <div className="text-xs text-stone-300">{r.time}</div>
+                            {deleteConfirmId === r.id ? (
+                              <div className="bg-red-50 border border-red-100 rounded-xl p-3 space-y-2">
+                                <div className="text-xs text-red-700 font-medium text-center">確定刪除「{r.name}」的報名？</div>
+                                <div className="flex gap-2">
+                                  <button className="flex-1 text-xs py-2 rounded-lg bg-red-500 text-white font-medium"
+                                    onClick={() => { deleteReg(r.id); setExpandedId(null); setDeleteConfirmId(null); }}>確定刪除</button>
+                                  <button className="flex-1 text-xs py-2 rounded-lg bg-stone-100 text-stone-600"
+                                    onClick={() => setDeleteConfirmId(null)}>取消</button>
+                                </div>
+                              </div>
+                            ) : (
+                            <div className="flex gap-2">
+                              <button
+                                className={`flex-1 text-xs py-2.5 rounded-xl font-semibold transition-colors ${r.paid ? "bg-stone-100 text-stone-600 hover:bg-stone-200" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+                                onClick={() => togglePaid(r.id)}>{r.paid ? "取消確認" : "✓ 確認付款"}</button>
+                              <button
+                                className="text-xs px-4 py-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors font-medium"
+                                onClick={() => setDeleteConfirmId(r.id)}>刪除</button>
+                            </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 意願統計 ── */}
+              {adminTab === "interest" && (
+                <div className="space-y-4 pb-8">
+                  {/* Per-slot stats */}
+                  <div className="space-y-2">
+                    {slotStats.map(({ slot, count, seatCount }) => (
+                      <div key={slot} className="bg-white rounded-2xl border border-stone-100 shadow-sm px-4 py-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-sm font-medium text-stone-700 leading-tight flex-1 pr-2">{slot}</span>
+                          <div className="text-right shrink-0">
+                            <span className="text-xl font-bold text-stone-900">{count}</span>
+                            <span className="text-xs text-stone-400 ml-1">人 / {seatCount} 座</span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-stone-700 rounded-full transition-all"
+                            style={{ width: interestRegs.length > 0 ? `${Math.round((count / interestRegs.length) * 100)}%` : "0%" }} />
+                        </div>
+                        {interestRegs.length > 0 && (
+                          <div className="text-xs text-stone-400 mt-1 text-right">
+                            {Math.round((count / interestRegs.length) * 100)}%
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Total */}
+                  {interestRegs.length > 0 && (
+                    <div className="bg-stone-900 rounded-xl px-4 py-3 flex justify-between text-sm">
+                      <span className="text-stone-400">總計登記</span>
+                      <span className="font-semibold text-white">
+                        {interestRegs.length} 人　{interestRegs.reduce((a, r) => a + r.seats, 0)} 個座位
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Interest list */}
+                  {interestRegs.length === 0 && (
+                    <div className="text-center text-sm text-stone-400 py-8">尚無意願登記</div>
+                  )}
+                  <div className="space-y-2">
+                    {[...interestRegs].reverse().map(r => (
+                      <div key={r.id} className="bg-white rounded-2xl border border-stone-100 shadow-sm p-4">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="text-sm font-semibold text-stone-800">@{r.ig}</span>
+                            <div className="text-xs text-stone-500 mt-0.5">
+                              佔位 {r.seats} 人{r.babies > 0 ? ` ＋ 抱抱 ${r.babies} 人` : ""}
+                            </div>
+                            <div className="mt-2 text-xs text-stone-600 bg-stone-50 rounded-lg px-2.5 py-1.5 inline-block">{r.slot}</div>
+                          </div>
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-medium shrink-0 ml-2 ${r.contacted ? "bg-emerald-100 text-emerald-700" : "bg-stone-100 text-stone-500"}`}>
+                            {r.contacted ? "已聯絡" : "待聯絡"}
+                          </span>
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <button
+                            className={`flex-1 text-xs py-2 rounded-xl font-medium transition-colors ${r.contacted ? "bg-stone-100 text-stone-600 hover:bg-stone-200" : "bg-stone-800 text-white hover:bg-stone-700"}`}
+                            onClick={() => toggleContacted(r.id)}>{r.contacted ? "取消" : "✓ 已聯絡"}</button>
+                          <button
+                            className="text-xs px-3 py-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                            onClick={() => setDeleteConfirmIId(r.id)}>刪除</button>
+                        </div>
+                        {deleteConfirmIId === r.id && (
+                          <div className="bg-red-50 border border-red-100 rounded-xl p-3 mt-2 space-y-2">
+                            <div className="text-xs text-red-700 font-medium text-center">確定刪除此筆意願？</div>
+                            <div className="flex gap-2">
+                              <button className="flex-1 text-xs py-2 rounded-lg bg-red-500 text-white font-medium"
+                                onClick={() => { deleteInterest(r.id); setDeleteConfirmIId(null); }}>確定刪除</button>
+                              <button className="flex-1 text-xs py-2 rounded-lg bg-stone-100 text-stone-600"
+                                onClick={() => setDeleteConfirmIId(null)}>取消</button>
+                            </div>
+                          </div>
+                        )}
+                        <div className="text-xs text-stone-300 mt-2">{r.time}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── 活動設定 ── */}
+              {adminTab === "settings" && editSett && (
+                <div className="space-y-4 pb-8">
+                  {/* ── 開放設定 ── */}
+                  <div className="bg-white rounded-2xl border border-stone-100 shadow-sm overflow-hidden">
+                    <div className="px-4 py-3 bg-stone-50 border-b border-stone-100">
+                      <div className="text-xs font-semibold text-stone-400 tracking-widest uppercase">開放設定</div>
+                    </div>
+                    <div className="divide-y divide-stone-100">
+                      {[
+                        ["interestOpen",     "📝 報名意願表", "開放意願登記"],
+                        ["registrationOpen", "🎬 正式報名表", "開放報名及付款"],
+                      ].map(([key, label, desc]) => (
+                        <div key={key} className="flex items-center justify-between px-4 py-4">
+                          <div>
+                            <div className="text-sm font-medium text-stone-700">{label}</div>
+                            <div className="text-xs text-stone-400 mt-0.5">{desc}</div>
+                          </div>
+                          <button
+                            className={`relative w-12 h-6 rounded-full transition-colors ${editSett[key] ? "bg-emerald-500" : "bg-stone-200"}`}
+                            onClick={() => setEditSett({ ...editSett, [key]: !editSett[key] })}>
+                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${editSett[key] ? "translate-x-6" : "translate-x-0"}`} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="px-4 pb-3 text-xs text-stone-400">切換後需點「儲存設定」才會生效</div>
+                  </div>
+
+                  <SettSection title="活動資訊">
+                    <SettInput label="活動名稱" value={editSett.movieName} onChange={v => setEditSett({ ...editSett, movieName: v })} />
+                    <SettInput label="日期" value={editSett.eventDate} onChange={v => setEditSett({ ...editSett, eventDate: v })} placeholder="2026/08/XX" />
+                    <SettInput label="時間" value={editSett.eventTime} onChange={v => setEditSett({ ...editSett, eventTime: v })} placeholder="14:00" />
+                    <SettInput label="地點（影城名稱）" value={editSett.venue} onChange={v => setEditSett({ ...editSett, venue: v })} />
+                    <SettInput label="影城地址（連結至 Google Maps）" value={editSett.venueAddress} onChange={v => setEditSett({ ...editSett, venueAddress: v })} placeholder="台中市西區台灣大道二段…" />
+                    <SettInput label="座位上限" value={editSett.totalCapacity} onChange={v => setEditSett({ ...editSett, totalCapacity: v })} type="number" />
+                    <SettInput label="票價（元）" value={editSett.ticketPrice} onChange={v => setEditSett({ ...editSett, ticketPrice: v })} type="number" />
+                    <SettInput label="原價（元，0 則不顯示）" value={editSett.originalPrice ?? 0} onChange={v => setEditSett({ ...editSett, originalPrice: v })} type="number" />
+                  </SettSection>
+
+                  <SettSection title="意願表場次選項">
+                    <div>
+                      <label className="text-xs text-stone-500 mb-1 block">每行一個場次（可任意新增或刪除）</label>
+                      <textarea
+                        className="w-full border border-stone-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-stone-500 transition-colors resize-none"
+                        rows={4}
+                        value={slotsText}
+                        onChange={e => setSlotsText(e.target.value)}
+                        placeholder={"場次 A — 8/10（日）14:00\n場次 B — 8/17（日）14:00"}
+                      />
+                    </div>
+                  </SettSection>
+
+                  <SettSection title="付款資訊">
+                    <SettInput label="銀行名稱" value={editSett.bankName} onChange={v => setEditSett({ ...editSett, bankName: v })} />
+                    <SettInput label="銀行帳號" value={editSett.bankAccount} onChange={v => setEditSett({ ...editSett, bankAccount: v })} />
+                    <SettInput label="戶名" value={editSett.accountName} onChange={v => setEditSett({ ...editSett, accountName: v })} />
+                    <SettInput label="LINE Pay ID" value={editSett.linePayId} onChange={v => setEditSett({ ...editSett, linePayId: v })} />
+                    <SettInput label="街口支付帳號" value={editSett.jkouId} onChange={v => setEditSett({ ...editSett, jkouId: v })} />
+                  </SettSection>
+
+                  <SettSection title="前台補充說明">
+                    <SettInput label="額外備注" value={editSett.extraNote} onChange={v => setEditSett({ ...editSett, extraNote: v })} placeholder="付款截止時間、注意事項…" />
+                  </SettSection>
+
+                  <SettSection title="系統設定">
+                    <SettInput label="管理員密碼" value={editSett.adminPassword} onChange={v => setEditSett({ ...editSett, adminPassword: v })} type="password" />
+                  </SettSection>
+
+                  <button
+                    className={`w-full py-3.5 rounded-xl text-sm font-semibold transition-all ${settSaved ? "bg-emerald-600 text-white" : "bg-stone-900 hover:bg-stone-700 text-white"}`}
+                    onClick={async () => {
+                      const slots = slotsText.split("\n").map(s => s.trim()).filter(Boolean);
+                      const updated = { ...editSett, interestSlots: slots };
+                      await saveSettings(updated);
+                      setSettSaved(true);
+                      setTimeout(() => setSettSaved(false), 2500);
+                    }}>{settSaved ? "✓ 已儲存" : "儲存設定"}</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom nav */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t border-stone-200 flex z-50">
+        {[["interest", "📝", "報名意願"], ["register", "🎬", "活動報名"], ["admin", "⚙️", "管理"]].map(([p, icon, label]) => (
+          <button key={p}
+            className={`flex-1 py-3 flex flex-col items-center gap-0.5 transition-colors ${page === p ? "text-stone-900" : "text-stone-400"}`}
+            onClick={() => setPage(p)}>
+            <span className="text-lg leading-none">{icon}</span>
+            <span className="text-xs font-medium">{label}</span>
+            {page === p && <div className="w-8 h-0.5 bg-stone-900 rounded-full mt-0.5" />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
